@@ -1,0 +1,29 @@
+{
+  "wifi": {
+    "ssid": "YOUR_WIFI_SSID",
+    "password": "YOUR_WIFI_PASSWORD"
+  },
+  "timezone": "America/New_York",
+  "colors": {
+    "preset": "shabbat",
+    "pure_black_oled": false
+  },
+  "render": {
+    "sizing": "static",
+    "align": "center",
+    "nikkud": "color",
+    "show_seconds": true
+  },
+  "speech": {
+    "voice": "hila",
+    "volume": 80,
+    "hourly_enabled": true,
+    "hourly_start": 7,
+    "hourly_end": 21
+  },
+  "display": {
+    "brightness": 85,
+    "timeout_sec": 60,
+    "always_on_usb": true
+  }
+}

@@ -1,0 +1,24 @@
+idf_component_register(
+    SRCS
+        "main.cpp"
+        "app_config.cpp"
+        "hal_board.cpp"
+        "hebrew_clock.cpp"
+        "clock_renderer.cpp"
+        "ui_screens.cpp"
+        "net_time.cpp"
+        "screencap.cpp"
+        "hebrew_glyphs.c"
+    INCLUDE_DIRS
+        "."
+    REQUIRES
+        nvs_flash
+        esp_wifi
+        esp_netif
+        esp_event
+        esp_timer
+        esp_partition
+        spi_flash
+        driver
+        espressif__esp_lcd_touch
+)

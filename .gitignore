@@ -1,0 +1,20 @@
+# Local device configuration containing Wi-Fi credentials (NEVER COMMIT)
+config.json
+main/default_config_seed.h
+
+# ESP-IDF build & managed components (auto-downloaded by idf.py from main/idf_component.yml)
+build/
+sdkconfig
+sdkconfig.old
+managed_components/
+
+# Generated / temporary screenshots, binaries, & Python venv
+*.png
+!docs/*.png
+*.bin
+*.elf
+*.map
+.DS_Store
+__pycache__/
+*.pyc
+.venv/
