@@ -1,7 +1,7 @@
 # ws-shaon-millim — שְׁעוֹן מִלִּים (Hebrew Word Clock)
 
 [![Version](https://img.shields.io/badge/version-0.1.0-blue.svg)](README.md)
-[![Hardware](https://img.shields.io/badge/board-Waveshare%20ESP32--S3--AMOLED--1.75C-00979D.svg)](https://www.waveshare.com/wiki/ESP32-S3-Touch-AMOLED-1.75)
+[![Hardware](https://img.shields.io/badge/board-Waveshare%20ESP32--S3--AMOLED--1.75C-00979D.svg)](https://www.waveshare.com/esp32-s3-touch-amoled-1.75c.htm)
 [![SoC](https://img.shields.io/badge/SoC-ESP32--S3R8%20(8MB%20PSRAM%20%2F%2032MB%20Flash)-E7352C.svg)](https://www.espressif.com/en/products/socs/esp32-s3)
 [![ESP-IDF](https://img.shields.io/badge/ESP--IDF-v5.3%2B-E7352C.svg)](https://docs.espressif.com/projects/esp-idf/en/v5.3.2/esp32s3/)
 [![LVGL](https://img.shields.io/badge/LVGL-v8.4-10B981.svg)](https://lvgl.io/)
@@ -9,7 +9,7 @@
 [![Audio](https://img.shields.io/badge/TTS-Microsoft%20Edge%20Neural%20(he--IL)-6366F1.svg)](audio.md)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-A native C/C++ Hebrew word clock (*Shaon Millim* / שְׁעוֹן מִלִּים) with offline Hebrew neural speech synthesis for the **Waveshare ESP32-S3-Touch-AMOLED-1.75C** (`466 × 466` round QSPI AMOLED display).
+A native C/C++ Hebrew word clock (*Shaon Millim* / שְׁעוֹן מִלִּים) with offline Hebrew neural speech synthesis for the **[Waveshare ESP32-S3-Touch-AMOLED-1.75C](https://www.waveshare.com/esp32-s3-touch-amoled-1.75c.htm)** (`466 × 466` round QSPI AMOLED display).
 
 Instead of digits or hands, the clock writes out the time in natural spoken Hebrew — e.g., **עֶשֶׂר וּשְׁתֵּי דַּקּוֹת בַּלַּיְלָה** (*"Ten and two minutes at night"*) — rendered right-to-left with separately color-graded vowel points (*nikkud*) and day-period luminance scaling. Pressing the side button speaks the time aloud in Hebrew: **"הַשָּׁעָה..."**
 
@@ -92,7 +92,7 @@ idf.py app-flash -p /dev/cu.usbmodem101
 
 ## Hardware & Subsystem Documentation
 
-Detailed engineering guides and discovered hardware lessons for the Waveshare ESP32-S3-Touch-AMOLED-1.75 / 1.75C:
+Detailed engineering guides and discovered hardware lessons for the [Waveshare ESP32-S3-Touch-AMOLED-1.75C](https://www.waveshare.com/esp32-s3-touch-amoled-1.75c.htm) and the standard ESP32-S3-Touch-AMOLED-1.75:
 
 * **[AGENTS.md](AGENTS.md)** — Master hardware pinout, I²C/QSPI/I²S bus maps, and golden rules.
 * **[espressif.md](espressif.md)** — ESP-IDF workflow, PSRAM/Flash configuration, and partition tables.
