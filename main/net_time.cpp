@@ -155,7 +155,12 @@ static void populate_wifi_sta_config(wifi_config_t *wifi_config) {
     wifi_config->sta.scan_method = WIFI_ALL_CHANNEL_SCAN;
     wifi_config->sta.sort_method = WIFI_CONNECT_AP_BY_SIGNAL;
     wifi_config->sta.threshold.rssi = -90;
-    wifi_config->sta.threshold.authmode = (g_cfg.wifi_pass[0] != '\0') ? WIFI_AUTH_WPA_WPA2_PSK : WIFI_AUTH_OPEN;
+    // Require at least WPA2-PSK. With ALL_CHANNEL_SCAN plus signal sorting, an open
+    // or WEP twin of a known SSID would otherwise win the association race.
+    wifi_config->sta.threshold.authmode = WIFI_AUTH_WPA2_PSK;
+    if (g_cfg.wifi_pass[0] == '\0') {
+        ESP_LOGW(TAG, "No Wi-Fi password stored: open networks are refused, so connect will keep failing until one is set");
+    }
     wifi_config->sta.pmf_cfg.capable = false;
     wifi_config->sta.pmf_cfg.required = false;
     wifi_config->sta.failure_retry_cnt = 2;
