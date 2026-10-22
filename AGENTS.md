@@ -29,7 +29,7 @@ Read the relevant subsystem guide before writing or modifying hardware-facing co
   * **Flash**: **32 MB** Quad SPI NOR Flash (GigaDevice `c8:4019`, `QIO` @ 80 MHz, 3.3V — verified on our hardware unit!).
 * **Unit Identifiers**:
   * **Serial Port (macOS)**: `/dev/cu.usbmodem*` (e.g. `/dev/cu.usbmodem101`, `USB-Serial/JTAG`)
-  * **ESP-IDF Environment**: `~/esp/esp-idf` (v5.3+) + `~/.espressif/python_env/idf5.3_py3.11_env`
+  * **ESP-IDF Environment**: `~/esp/esp-idf` (v5.3.6+) + `~/.espressif/python_env/idf5.3_py3.11_env`
 * **Display**: 1.75" Round AMOLED, **466 × 466** pixels, 16.7M colors, **CO5300** QSPI driver.
 * **Touch**: **CST9217** capacitive touch controller (I²C).
 * **Audio**: Dual-microphone array with hardware acoustic echo cancellation (AEC) feedback channel via **ES7210** ADC + **ES8311** DAC + **NS4150B** Class-D speaker amp.

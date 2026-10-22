@@ -1,6 +1,6 @@
 # ESP-IDF Development Guide (`espressif.md`)
 
-Best practices for building, configuring, flashing, and debugging firmware using **Espressif ESP-IDF (v5.1+ / v5.3+ recommended)** on the Waveshare ESP32-S3-Touch-AMOLED-1.75 / 1.75C.
+Best practices for building, configuring, flashing, and debugging firmware using **Espressif ESP-IDF (v5.3.6 or newer)** on the Waveshare ESP32-S3-Touch-AMOLED-1.75 / 1.75C.
 
 ---
 
@@ -11,7 +11,7 @@ Waveshare publishes an official managed component in the Espressif Component Reg
 ### Add the BSP to `main/idf_component.yml`
 ```yaml
 dependencies:
-  idf: ">=5.1.0"
+  idf: ">=5.3.6"
   waveshare/esp32_s3_touch_amoled_1_75: "*"
 ```
 

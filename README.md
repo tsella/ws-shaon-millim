@@ -3,7 +3,7 @@
 [![Version](https://img.shields.io/badge/version-0.1.0-blue.svg)](README.md)
 [![Hardware](https://img.shields.io/badge/board-Waveshare%20ESP32--S3--AMOLED--1.75C-00979D.svg)](https://www.waveshare.com/esp32-s3-touch-amoled-1.75c.htm)
 [![SoC](https://img.shields.io/badge/SoC-ESP32--S3R8%20(8MB%20PSRAM%20%2F%2032MB%20Flash)-E7352C.svg)](https://www.espressif.com/en/products/socs/esp32-s3)
-[![ESP-IDF](https://img.shields.io/badge/ESP--IDF-v5.3%2B-E7352C.svg)](https://docs.espressif.com/projects/esp-idf/en/v5.3.2/esp32s3/)
+[![ESP-IDF](https://img.shields.io/badge/ESP--IDF-v5.3.6%2B-E7352C.svg)](https://docs.espressif.com/projects/esp-idf/en/v5.3.6/esp32s3/)
 [![LVGL](https://img.shields.io/badge/LVGL-v8.4-10B981.svg)](https://lvgl.io/)
 [![Typography](https://img.shields.io/badge/HarfBuzz%20%2B%20FreeType-Frank%20Ruhl%20Libre-F59E0B.svg)](https://fonts.google.com/specimen/Frank+Ruhl+Libre)
 [![Audio](https://img.shields.io/badge/TTS-Microsoft%20Edge%20Neural%20(he--IL)-6366F1.svg)](audio.md)
