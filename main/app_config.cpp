@@ -84,6 +84,26 @@ static int find_preset_index(const char *name) {
     return 0;
 }
 
+static int clamp_int(int v, int lo, int hi) {
+    return (v < lo) ? lo : ((v > hi) ? hi : v);
+}
+
+// Every value below is read back from NVS, which a power loss during a settings
+// save or a bad flash image can leave out of range. The renderer and the supervisor
+// loop index fixed arrays with these values, and a negative index reads before the
+// array, so normalise them once here.
+static void app_config_clamp(void) {
+    g_cfg.tz_index       = clamp_int(g_cfg.tz_index, 0, TZ_COUNT - 1);
+    g_cfg.preset_index   = clamp_int(g_cfg.preset_index, 0, PRESET_COUNT - 1);
+    g_cfg.nikkud_mode    = clamp_int(g_cfg.nikkud_mode, 0, 2);
+    g_cfg.voice_id       = clamp_int(g_cfg.voice_id, 0, 2);
+    g_cfg.volume         = clamp_int(g_cfg.volume, 0, 100);
+    g_cfg.hourly_start   = clamp_int(g_cfg.hourly_start, 0, 23);
+    g_cfg.hourly_end     = clamp_int(g_cfg.hourly_end, 0, 23);
+    g_cfg.brightness     = clamp_int(g_cfg.brightness, 10, 100);
+    g_cfg.timeout_idx    = clamp_int(g_cfg.timeout_idx, 0, 4);
+}
+
 void app_config_apply_timezone(void) {
     int idx = g_cfg.tz_index;
     if (idx < 0 || idx >= TZ_COUNT) idx = 0;
@@ -184,5 +204,6 @@ void app_config_load(void) {
             app_config_save();
         }
     }
+    app_config_clamp();
     app_config_apply_timezone();
 }
