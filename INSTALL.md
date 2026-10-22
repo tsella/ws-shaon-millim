@@ -11,12 +11,12 @@ Step-by-step instructions to configure, build, flash, and debug **`ws-shaon-mill
 * USB-C data cable connected to your computer.
 
 ### Software
-1. **ESP-IDF v5.3.6** (minimum; v5.3.6 is the current bugfix release of the 5.3 branch):
+1. **ESP-IDF v5.5.6** (minimum; v5.5.6 is the current bugfix release of the 5.5 branch):
    * Installed at `~/esp/esp-idf` (standard Espressif installation path).
    * If you haven't installed ESP-IDF yet:
      ```bash
      mkdir -p ~/esp && cd ~/esp
-     git clone -b v5.3.6 --recursive https://github.com/espressif/esp-idf.git
+     git clone -b v5.5.6 --recursive https://github.com/espressif/esp-idf.git
      cd esp-idf && ./install.sh esp32s3
      ```
 2. **Python 3.10+** (for the optional asset/configuration generator and live screen-capture tool).
