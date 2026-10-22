@@ -355,6 +355,57 @@ typedef struct __attribute__((packed)) {
     uint32_t length;
 } voice_entry_t;
 
+// Pack layout: "WSMV" | num_voices (u16) | num_tokens (u16) | entries[num_voices][num_tokens]
+static constexpr uint32_t VOICE_HEADER_SIZE = 8;
+
+static uint16_t s_voice_num_voices = 0;
+static uint16_t s_voice_num_tokens = 0;
+static uint32_t s_voice_pack_size  = 0;
+
+// Validate the header and every index entry against the real partition size.
+// A corrupt or truncated pack fails closed: s_voice_mmap_ptr stays NULL and the
+// play path refuses to run, instead of reading whatever follows the mapping.
+static bool voice_pack_validate(const uint8_t *bytes, uint32_t size) {
+    if (size < VOICE_HEADER_SIZE || memcmp(bytes, "WSMV", 4) != 0) {
+        ESP_LOGW(TAG, "Voice partition has no 'WSMV' header (%02X %02X %02X %02X)",
+                 bytes[0], bytes[1], bytes[2], bytes[3]);
+        return false;
+    }
+    uint16_t n_voices = (uint16_t)(bytes[4] | (bytes[5] << 8));
+    uint16_t n_tokens = (uint16_t)(bytes[6] | (bytes[7] << 8));
+    if (n_voices == 0 || n_tokens == 0) {
+        ESP_LOGW(TAG, "Voice pack index is empty (%u voices, %u words)", n_voices, n_tokens);
+        return false;
+    }
+    uint64_t index_bytes = (uint64_t)VOICE_HEADER_SIZE
+                         + (uint64_t)n_voices * n_tokens * sizeof(voice_entry_t);
+    if (index_bytes > size) {
+        ESP_LOGW(TAG, "Voice pack index (%llu B) exceeds partition (%u B)",
+                 (unsigned long long)index_bytes, (unsigned)size);
+        return false;
+    }
+
+    const voice_entry_t *entries = (const voice_entry_t *)(bytes + VOICE_HEADER_SIZE);
+    const int count = (int)n_voices * (int)n_tokens;
+    for (int i = 0; i < count; i++) {
+        uint32_t off = entries[i].offset;
+        uint32_t len = entries[i].length;
+        if (len == 0) continue;                       // word absent -> silence
+        if (off < index_bytes || (off & 1u) != 0 || (uint64_t)off + len > size) {
+            ESP_LOGW(TAG, "Voice pack entry %d out of bounds (offset=%u len=%u partition=%u)",
+                     i, (unsigned)off, (unsigned)len, (unsigned)size);
+            return false;
+        }
+    }
+
+    s_voice_num_voices = n_voices;
+    s_voice_num_tokens = n_tokens;
+    s_voice_pack_size  = size;
+    ESP_LOGI(TAG, "Voice pack OK: %u voices x %u words, %u-byte index in %u-byte partition",
+             n_voices, n_tokens, (unsigned)index_bytes, (unsigned)size);
+    return true;
+}
+
 void hal_audio_init(int initial_volume) {
     s_audio_mutex = xSemaphoreCreateMutex();
     const esp_partition_t *part = esp_partition_find_first(
@@ -366,12 +417,11 @@ void hal_audio_init(int initial_volume) {
     const void *ptr = NULL;
     if (esp_partition_mmap(part, 0, part->size, ESP_PARTITION_MMAP_DATA, &ptr, &s_voice_mmap_handle) == ESP_OK) {
         const uint8_t *bytes = (const uint8_t *)ptr;
-        if (memcmp(bytes, "WSMV", 4) == 0) {
+        if (voice_pack_validate(bytes, part->size)) {
             s_voice_mmap_ptr = bytes;
             ESP_LOGI(TAG, "Mounted Hebrew voice pack ('WSMV') in flash at %p", ptr);
         } else {
-            ESP_LOGW(TAG, "Voice partition magic mismatch (%02X %02X %02X %02X)",
-                     bytes[0], bytes[1], bytes[2], bytes[3]);
+            ESP_LOGW(TAG, "Voice pack rejected; spoken audio is disabled until it is reflashed");
         }
     }
 
@@ -431,8 +481,13 @@ void hal_audio_play_tokens(const heb_token_id_t *seq, int seq_len, int voice_id,
     if (xSemaphoreTake(s_audio_mutex, pdMS_TO_TICKS(100)) != pdTRUE) return;
 
     int vid = (voice_id == 1) ? 1 : 0;
-    uint16_t num_tokens = *(const uint16_t *)(s_voice_mmap_ptr + 6);
-    const voice_entry_t *index_base = (const voice_entry_t *)(s_voice_mmap_ptr + 8);
+    if (vid >= (int)s_voice_num_voices) {
+        ESP_LOGW(TAG, "Voice %d not in pack (%u voices); falling back to voice 0",
+                 vid, (unsigned)s_voice_num_voices);
+        vid = 0;
+    }
+    const uint16_t num_tokens = s_voice_num_tokens;
+    const voice_entry_t *index_base = (const voice_entry_t *)(s_voice_mmap_ptr + VOICE_HEADER_SIZE);
 
     int r31 = -1, r32 = -1;
     if (bsp_display_lock(200)) {
@@ -454,8 +509,11 @@ void hal_audio_play_tokens(const heb_token_id_t *seq, int seq_len, int voice_id,
     int last_err = 0;
     for (int i = 0; i < seq_len; i++) {
         int tok = (int)seq[i];
+        if (tok < 0 || tok >= (int)num_tokens) continue;
         const voice_entry_t *ent = &index_base[vid * num_tokens + tok];
-        if (ent->length > 0 && ent->offset < 4 * 1024 * 1024) {
+        // Re-checked per play: the pack is flash-mapped data, not trusted input.
+        if (ent->length > 0 && ent->offset >= VOICE_HEADER_SIZE &&
+            (uint64_t)ent->offset + ent->length <= s_voice_pack_size) {
             const int16_t *mono_samples = (const int16_t *)(s_voice_mmap_ptr + ent->offset);
             int total_samples = (int)(ent->length / sizeof(int16_t));
             int idx = 0;
