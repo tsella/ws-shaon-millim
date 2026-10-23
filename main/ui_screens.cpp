@@ -15,13 +15,15 @@ static lv_obj_t *s_scr_settings    = NULL;
 static lv_obj_t *s_cont_settings   = NULL;
 static lv_obj_t *s_lbl_wifi_status = NULL;
 static lv_obj_t *s_dd_wifi_ssid    = NULL;
+static lv_obj_t *s_row_wifi_pass   = NULL;
 static lv_obj_t *s_ta_wifi_pass    = NULL;
 static lv_obj_t *s_kb_wifi         = NULL;
 
-static volatile bool    s_screen_asleep       = false;
-static volatile int64_t s_last_activity_us    = 0;
-static volatile bool    s_force_redraw        = true;
+static volatile bool    s_screen_asleep        = false;
+static volatile int64_t s_last_activity_us     = 0;
+static volatile bool    s_force_redraw         = true;
 static volatile int64_t s_status_hold_until_us = 0;
+static int64_t          s_last_cog_tap_us      = 0;
 
 void ui_wake_screen(void) {
     s_last_activity_us = esp_timer_get_time();
@@ -103,7 +105,11 @@ void ui_update_wifi_scan_results(const char *opts_newline_sep, int ap_count) {
             char sel_buf[64] = "";
             lv_dropdown_get_selected_str(s_dd_wifi_ssid, sel_buf, sizeof(sel_buf));
             if (sel_buf[0] != '\0') {
+                memset(g_cfg.wifi_ssid, 0, sizeof(g_cfg.wifi_ssid));
                 strncpy(g_cfg.wifi_ssid, sel_buf, sizeof(g_cfg.wifi_ssid) - 1);
+                if (app_config_find_wifi_pass(sel_buf, g_cfg.wifi_pass, sizeof(g_cfg.wifi_pass))) {
+                    if (s_ta_wifi_pass) lv_textarea_set_text(s_ta_wifi_pass, g_cfg.wifi_pass);
+                }
             }
             if (lv_scr_act() == s_scr_settings) {
                 lv_dropdown_open(s_dd_wifi_ssid);
@@ -120,20 +126,49 @@ void ui_update_wifi_scan_results(const char *opts_newline_sep, int ap_count) {
     }
 }
 
+void ui_sync_wifi_fields(void) {
+    if (bsp_display_lock(200)) {
+        if (s_dd_wifi_ssid && g_cfg.wifi_ssid[0] != '\0') {
+            lv_dropdown_set_options(s_dd_wifi_ssid, g_cfg.wifi_ssid);
+            lv_dropdown_set_selected(s_dd_wifi_ssid, 0);
+        }
+        if (s_ta_wifi_pass) {
+            lv_textarea_set_text(s_ta_wifi_pass, g_cfg.wifi_pass);
+        }
+        ui_refresh_wifi_status_label();
+        bsp_display_unlock();
+    }
+}
+
 static void on_clock_touch_cb(lv_event_t *e) {
+    (void)e;
+    bool was_asleep = s_screen_asleep;
     ui_wake_screen();
+    if (was_asleep) {
+        s_last_cog_tap_us = 0;
+        return;
+    }
     lv_indev_t *indev = lv_indev_get_act();
     if (!indev) return;
     lv_point_t pt;
     lv_indev_get_point(indev, &pt);
 
-    // Bottom 6 o'clock Settings Cog touch zone (x in 180..286, y >= 390)
-    if (pt.x >= 180 && pt.x <= 286 && pt.y >= 390) {
-        ui_refresh_wifi_status_label();
-        if (s_cont_settings) {
-            lv_obj_scroll_to_y(s_cont_settings, 0, LV_ANIM_OFF);
+    // Bottom 6 o'clock Settings Cog zone (center ~233, 434) — require a deliberate double-tap (60..550 ms)
+    if (pt.x >= 198 && pt.x <= 268 && pt.y >= 402) {
+        int64_t now_us = esp_timer_get_time();
+        int64_t dt_ms  = (now_us - s_last_cog_tap_us) / 1000LL;
+        if (s_last_cog_tap_us > 0 && dt_ms >= 60 && dt_ms <= 550) {
+            s_last_cog_tap_us = 0;
+            ui_refresh_wifi_status_label();
+            if (s_cont_settings) {
+                lv_obj_scroll_to_y(s_cont_settings, 0, LV_ANIM_OFF);
+            }
+            lv_scr_load_anim(s_scr_settings, LV_SCR_LOAD_ANIM_MOVE_TOP, 220, 0, false);
+        } else {
+            s_last_cog_tap_us = now_us;
         }
-        lv_scr_load_anim(s_scr_settings, LV_SCR_LOAD_ANIM_MOVE_TOP, 220, 0, false);
+    } else {
+        s_last_cog_tap_us = 0;
     }
 }
 
@@ -441,33 +476,65 @@ void ui_screens_init(void) {
     {
         lv_obj_t *row = make_row(cont, "Network");
         s_dd_wifi_ssid = lv_dropdown_create(row);
-        lv_dropdown_set_options(s_dd_wifi_ssid, g_cfg.wifi_ssid[0] ? g_cfg.wifi_ssid : "Tap Scan Below");
+        char init_opts[560] = "";
+        if (g_cfg.known_wifi_count > 0) {
+            for (int i = 0; i < g_cfg.known_wifi_count; i++) {
+                if (g_cfg.known_wifi[i].ssid[0] == '\0') continue;
+                if (init_opts[0] != '\0') strncat(init_opts, "\n", sizeof(init_opts) - strlen(init_opts) - 1);
+                strncat(init_opts, g_cfg.known_wifi[i].ssid, sizeof(init_opts) - strlen(init_opts) - 1);
+            }
+        } else if (g_cfg.wifi_ssid[0] != '\0') {
+            strncpy(init_opts, g_cfg.wifi_ssid, sizeof(init_opts) - 1);
+        } else {
+            strncpy(init_opts, "Tap Scan Below", sizeof(init_opts) - 1);
+        }
+        lv_dropdown_set_options(s_dd_wifi_ssid, init_opts);
         lv_obj_set_width(s_dd_wifi_ssid, 185);
         lv_obj_add_event_cb(s_dd_wifi_ssid, [](lv_event_t *e) {
             ui_wake_screen();
             char buf[64] = "";
             lv_dropdown_get_selected_str(lv_event_get_target(e), buf, sizeof(buf));
             if (buf[0] != '\0' && strcmp(buf, "Tap Scan Below") != 0) {
+                memset(g_cfg.wifi_ssid, 0, sizeof(g_cfg.wifi_ssid));
                 strncpy(g_cfg.wifi_ssid, buf, sizeof(g_cfg.wifi_ssid) - 1);
+                if (app_config_find_wifi_pass(buf, g_cfg.wifi_pass, sizeof(g_cfg.wifi_pass))) {
+                    if (s_ta_wifi_pass) lv_textarea_set_text(s_ta_wifi_pass, g_cfg.wifi_pass);
+                } else {
+                    memset(g_cfg.wifi_pass, 0, sizeof(g_cfg.wifi_pass));
+                    if (s_ta_wifi_pass) lv_textarea_set_text(s_ta_wifi_pass, "");
+                }
             }
         }, LV_EVENT_VALUE_CHANGED, NULL);
     }
 
     {
         lv_obj_t *row = make_row(cont, "Password");
+        s_row_wifi_pass = row;
         s_ta_wifi_pass = lv_textarea_create(row);
         lv_textarea_set_one_line(s_ta_wifi_pass, true);
         lv_textarea_set_password_mode(s_ta_wifi_pass, true);
+        lv_textarea_set_password_show_time(s_ta_wifi_pass, 1200);
         lv_textarea_set_text(s_ta_wifi_pass, g_cfg.wifi_pass);
         lv_obj_set_width(s_ta_wifi_pass, 185);
         lv_obj_add_event_cb(s_ta_wifi_pass, [](lv_event_t *e) {
             ui_wake_screen();
             lv_event_code_t code = lv_event_get_code(e);
-            if (code == LV_EVENT_FOCUSED && s_kb_wifi) {
+            if ((code == LV_EVENT_FOCUSED || code == LV_EVENT_CLICKED) && s_kb_wifi) {
                 lv_keyboard_set_textarea(s_kb_wifi, s_ta_wifi_pass);
                 lv_obj_clear_flag(s_kb_wifi, LV_OBJ_FLAG_HIDDEN);
+                if (s_cont_settings && s_row_wifi_pass) {
+                    // Expand bottom scroll padding so the Password row scrolls above the bottom keyboard (y=251..441)
+                    lv_obj_set_style_pad_bottom(s_cont_settings, 285, 0);
+                    lv_obj_update_layout(s_cont_settings);
+                    lv_coord_t row_y = lv_obj_get_y(s_row_wifi_pass);
+                    lv_obj_scroll_to_y(s_cont_settings, row_y - 95, LV_ANIM_ON);
+                }
             } else if (code == LV_EVENT_DEFOCUSED && s_kb_wifi) {
                 lv_obj_add_flag(s_kb_wifi, LV_OBJ_FLAG_HIDDEN);
+                if (s_cont_settings) {
+                    lv_obj_set_style_pad_bottom(s_cont_settings, 76, 0);
+                    lv_obj_update_layout(s_cont_settings);
+                }
             }
         }, LV_EVENT_ALL, NULL);
     }
@@ -501,14 +568,21 @@ void ui_screens_init(void) {
         lv_obj_center(l2);
         lv_obj_add_event_cb(btn_conn, [](lv_event_t *e) {
             ui_wake_screen();
+            if (s_kb_wifi) lv_obj_add_flag(s_kb_wifi, LV_OBJ_FLAG_HIDDEN);
+            if (s_cont_settings) {
+                lv_obj_set_style_pad_bottom(s_cont_settings, 76, 0);
+                lv_obj_update_layout(s_cont_settings);
+            }
             char ssid_buf[64] = "";
             if (s_dd_wifi_ssid) {
                 lv_dropdown_get_selected_str(s_dd_wifi_ssid, ssid_buf, sizeof(ssid_buf));
                 if (ssid_buf[0] != '\0' && strcmp(ssid_buf, "Tap Scan Below") != 0) {
+                    memset(g_cfg.wifi_ssid, 0, sizeof(g_cfg.wifi_ssid));
                     strncpy(g_cfg.wifi_ssid, ssid_buf, sizeof(g_cfg.wifi_ssid) - 1);
                 }
             }
             if (s_ta_wifi_pass) {
+                memset(g_cfg.wifi_pass, 0, sizeof(g_cfg.wifi_pass));
                 strncpy(g_cfg.wifi_pass, lv_textarea_get_text(s_ta_wifi_pass), sizeof(g_cfg.wifi_pass) - 1);
             }
             app_config_save();
@@ -527,6 +601,13 @@ void ui_screens_init(void) {
         lv_event_code_t code = lv_event_get_code(e);
         if (code == LV_EVENT_READY || code == LV_EVENT_CANCEL) {
             lv_obj_add_flag(s_kb_wifi, LV_OBJ_FLAG_HIDDEN);
+            if (s_ta_wifi_pass) {
+                lv_obj_clear_state(s_ta_wifi_pass, LV_STATE_FOCUSED);
+            }
+            if (s_cont_settings) {
+                lv_obj_set_style_pad_bottom(s_cont_settings, 76, 0);
+                lv_obj_update_layout(s_cont_settings);
+            }
         }
     }, LV_EVENT_ALL, NULL);
 

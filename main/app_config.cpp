@@ -93,6 +93,7 @@ static int clamp_int(int v, int lo, int hi) {
 // loop index fixed arrays with these values, and a negative index reads before the
 // array, so normalise them once here.
 static void app_config_clamp(void) {
+    g_cfg.known_wifi_count = clamp_int(g_cfg.known_wifi_count, 0, MAX_KNOWN_WIFI);
     g_cfg.tz_index       = clamp_int(g_cfg.tz_index, 0, TZ_COUNT - 1);
     g_cfg.preset_index   = clamp_int(g_cfg.preset_index, 0, PRESET_COUNT - 1);
     g_cfg.nikkud_mode    = clamp_int(g_cfg.nikkud_mode, 0, 2);
@@ -104,6 +105,63 @@ static void app_config_clamp(void) {
     g_cfg.timeout_idx    = clamp_int(g_cfg.timeout_idx, 0, 4);
 }
 
+void app_config_remember_wifi(const char *ssid, const char *pass) {
+    if (!ssid || ssid[0] == '\0' || strcmp(ssid, "Tap Scan Below") == 0) {
+        return;
+    }
+    const char *pw = pass ? pass : "";
+    int count = clamp_int(g_cfg.known_wifi_count, 0, MAX_KNOWN_WIFI);
+
+    // Check if SSID already exists in known_wifi
+    int existing_idx = -1;
+    for (int i = 0; i < count; i++) {
+        if (strcmp(g_cfg.known_wifi[i].ssid, ssid) == 0) {
+            existing_idx = i;
+            break;
+        }
+    }
+
+    wifi_cred_t entry = {};
+    strncpy(entry.ssid, ssid, sizeof(entry.ssid) - 1);
+    if (pw[0] != '\0') {
+        strncpy(entry.pass, pw, sizeof(entry.pass) - 1);
+    } else if (existing_idx >= 0) {
+        strncpy(entry.pass, g_cfg.known_wifi[existing_idx].pass, sizeof(entry.pass) - 1);
+    }
+
+    if (existing_idx >= 0) {
+        // Move existing entry to front (MRU order)
+        for (int i = existing_idx; i > 0; i--) {
+            g_cfg.known_wifi[i] = g_cfg.known_wifi[i - 1];
+        }
+        g_cfg.known_wifi[0] = entry;
+        g_cfg.known_wifi_count = count;
+    } else {
+        // Insert new entry at front, shifting older entries down
+        int new_count = (count < MAX_KNOWN_WIFI) ? (count + 1) : MAX_KNOWN_WIFI;
+        for (int i = new_count - 1; i > 0; i--) {
+            g_cfg.known_wifi[i] = g_cfg.known_wifi[i - 1];
+        }
+        g_cfg.known_wifi[0] = entry;
+        g_cfg.known_wifi_count = new_count;
+    }
+}
+
+bool app_config_find_wifi_pass(const char *ssid, char *out_pass, int max_len) {
+    if (!ssid || ssid[0] == '\0') return false;
+    int count = clamp_int(g_cfg.known_wifi_count, 0, MAX_KNOWN_WIFI);
+    for (int i = 0; i < count; i++) {
+        if (strcmp(g_cfg.known_wifi[i].ssid, ssid) == 0 && g_cfg.known_wifi[i].pass[0] != '\0') {
+            if (out_pass && max_len > 0) {
+                memset(out_pass, 0, (size_t)max_len);
+                strncpy(out_pass, g_cfg.known_wifi[i].pass, (size_t)max_len - 1);
+            }
+            return true;
+        }
+    }
+    return false;
+}
+
 void app_config_apply_timezone(void) {
     int idx = g_cfg.tz_index;
     if (idx < 0 || idx >= TZ_COUNT) idx = 0;
@@ -113,11 +171,23 @@ void app_config_apply_timezone(void) {
 }
 
 void app_config_save(void) {
+    if (g_cfg.wifi_ssid[0] != '\0' && g_cfg.wifi_pass[0] != '\0') {
+        app_config_remember_wifi(g_cfg.wifi_ssid, g_cfg.wifi_pass);
+    }
     nvs_handle_t h;
     if (nvs_open("ws_millim", NVS_READWRITE, &h) == ESP_OK) {
         nvs_set_u8(h, "seeded", 1);
         nvs_set_str(h, "ssid", g_cfg.wifi_ssid);
         nvs_set_str(h, "pass", g_cfg.wifi_pass);
+        int kw_cnt = clamp_int(g_cfg.known_wifi_count, 0, MAX_KNOWN_WIFI);
+        nvs_set_i32(h, "kw_cnt", kw_cnt);
+        for (int i = 0; i < kw_cnt; i++) {
+            char ks[16], kp[16];
+            snprintf(ks, sizeof(ks), "kw_s%d", i & 7);
+            snprintf(kp, sizeof(kp), "kw_p%d", i & 7);
+            nvs_set_str(h, ks, g_cfg.known_wifi[i].ssid);
+            nvs_set_str(h, kp, g_cfg.known_wifi[i].pass);
+        }
         nvs_set_i32(h, "tz_idx", g_cfg.tz_index);
         nvs_set_i32(h, "preset", g_cfg.preset_index);
         nvs_set_u8(h, "pure_blk", g_cfg.pure_black_oled ? 1 : 0);
@@ -184,6 +254,23 @@ void app_config_load(void) {
             }
             int32_t v32;
             uint8_t v8;
+            if (nvs_get_i32(h, "kw_cnt", &v32) == ESP_OK) {
+                int cnt = clamp_int((int)v32, 0, MAX_KNOWN_WIFI);
+                g_cfg.known_wifi_count = 0;
+                for (int i = 0; i < cnt; i++) {
+                    char ks[16], kp[16];
+                    snprintf(ks, sizeof(ks), "kw_s%d", i & 7);
+                    snprintf(kp, sizeof(kp), "kw_p%d", i & 7);
+                    char s_buf[64] = "", p_buf[64] = "";
+                    size_t slen = sizeof(s_buf), plen = sizeof(p_buf);
+                    if (nvs_get_str(h, ks, s_buf, &slen) == ESP_OK && s_buf[0] != '\0') {
+                        nvs_get_str(h, kp, p_buf, &plen);
+                        int idx = g_cfg.known_wifi_count++;
+                        strncpy(g_cfg.known_wifi[idx].ssid, s_buf, sizeof(g_cfg.known_wifi[idx].ssid) - 1);
+                        strncpy(g_cfg.known_wifi[idx].pass, p_buf, sizeof(g_cfg.known_wifi[idx].pass) - 1);
+                    }
+                }
+            }
             if (nvs_get_i32(h, "tz_idx", &v32) == ESP_OK) g_cfg.tz_index = v32;
             if (nvs_get_i32(h, "preset", &v32) == ESP_OK) g_cfg.preset_index = v32;
             if (nvs_get_u8(h, "pure_blk", &v8) == ESP_OK) g_cfg.pure_black_oled = (v8 != 0);
@@ -202,8 +289,18 @@ void app_config_load(void) {
             nvs_close(h);
         } else {
             nvs_close(h);
+            if (strlen(SEED_WIFI_SSID) > 0 && strlen(SEED_WIFI_PASSWORD) > 0) {
+                app_config_remember_wifi(SEED_WIFI_SSID, SEED_WIFI_PASSWORD);
+            }
             app_config_save();
         }
+    }
+    // Always ensure config.json seed network and active network are in the known_wifi table
+    if (strlen(SEED_WIFI_SSID) > 0 && strlen(SEED_WIFI_PASSWORD) > 0) {
+        app_config_remember_wifi(SEED_WIFI_SSID, SEED_WIFI_PASSWORD);
+    }
+    if (g_cfg.wifi_ssid[0] != '\0' && g_cfg.wifi_pass[0] != '\0') {
+        app_config_remember_wifi(g_cfg.wifi_ssid, g_cfg.wifi_pass);
     }
     app_config_clamp();
     app_config_apply_timezone();

@@ -32,6 +32,9 @@ static esp_timer_handle_t s_wakeup_timer        = NULL;
 static volatile bool      s_wifi_started        = false;
 static volatile bool      s_scanning            = false;
 static volatile bool      s_manual_reconnecting = false;
+static volatile int       s_fail_count          = 0;
+
+static void wifi_roam_scan_task(void *arg);
 
 static inline bool is_external_power_active(void) {
     return g_usb_plugged || g_is_charging;
@@ -123,10 +126,19 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base,
         ESP_LOGW(TAG, "Wi-Fi disconnected from '%s' (reason=%d)",
                  g_cfg.wifi_ssid, reason);
 
-        if (!s_scanning && !s_manual_reconnecting && g_cfg.wifi_ssid[0] != '\0') {
-            schedule_reconnect(1500);
+        s_fail_count = s_fail_count + 1;
+        if (!s_scanning && !s_manual_reconnecting) {
+            // If current network is not in range (reason=201 NO_AP_FOUND) or after 2 failed attempts,
+            // scan for any remembered Wi-Fi network in range and auto-join it!
+            if ((reason == WIFI_REASON_NO_AP_FOUND || s_fail_count >= 2) && g_cfg.known_wifi_count > 0) {
+                s_fail_count = 0;
+                xTaskCreate(wifi_roam_scan_task, "wifi_roam", 6144, NULL, 4, NULL);
+            } else if (g_cfg.wifi_ssid[0] != '\0') {
+                schedule_reconnect(1500);
+            }
         }
     } else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
+        s_fail_count = 0;
         if (s_reconnect_timer) {
             esp_timer_stop(s_reconnect_timer);
         }
@@ -136,6 +148,14 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base,
         wifi_ap_record_t ap_info;
         if (esp_wifi_sta_get_ap_info(&ap_info) == ESP_OK) {
             g_wifi_rssi = ap_info.rssi;
+        }
+        // Ensure the connected network is at the front of the remembered networks list
+        if (g_cfg.wifi_ssid[0] != '\0' && g_cfg.wifi_pass[0] != '\0') {
+            if (g_cfg.known_wifi_count == 0 || strcmp(g_cfg.known_wifi[0].ssid, g_cfg.wifi_ssid) != 0) {
+                app_config_save();
+            } else {
+                app_config_remember_wifi(g_cfg.wifi_ssid, g_cfg.wifi_pass);
+            }
         }
         ui_request_clock_redraw();
         ESP_LOGI(TAG, "Wi-Fi connected! SSID: '%s', IP: %s, RSSI: %d dBm",
@@ -384,10 +404,87 @@ static void wifi_scan_task(void *arg) {
         ui_update_wifi_scan_results("", 0);
     }
 
+    // Also check if a known network was discovered during manual scan while disconnected
     free(opts);
     s_scanning = false;
     if (!g_wifi_connected && g_cfg.wifi_ssid[0] != '\0') {
         schedule_reconnect(1500);
+    }
+    vTaskDelete(NULL);
+}
+
+static void wifi_roam_scan_task(void *arg) {
+    (void)arg;
+    if (s_scanning || g_wifi_sleeping || g_wifi_connected) {
+        vTaskDelete(NULL);
+        return;
+    }
+    s_scanning = true;
+    if (s_reconnect_timer) {
+        esp_timer_stop(s_reconnect_timer);
+    }
+
+    wifi_scan_config_t scan_cfg = {};
+    scan_cfg.show_hidden = false;
+    scan_cfg.scan_type = WIFI_SCAN_TYPE_ACTIVE;
+    scan_cfg.scan_time.active.min = 60;
+    scan_cfg.scan_time.active.max = 160;
+
+    esp_err_t err = esp_wifi_scan_start(&scan_cfg, true);
+    if (err == ESP_ERR_WIFI_STATE) {
+        esp_wifi_disconnect();
+        vTaskDelay(pdMS_TO_TICKS(120));
+        err = esp_wifi_scan_start(&scan_cfg, true);
+    }
+
+    char matched_ssid[64] = "";
+    char matched_pass[64] = "";
+    int  matched_rssi     = -127;
+
+    if (err == ESP_OK) {
+        uint16_t ap_count = 0;
+        esp_wifi_scan_get_ap_num(&ap_count);
+        if (ap_count > 30) ap_count = 30;
+        wifi_ap_record_t *ap_list = (wifi_ap_record_t *)calloc(ap_count > 0 ? ap_count : 1, sizeof(wifi_ap_record_t));
+        if (ap_list && ap_count > 0) {
+            esp_wifi_scan_get_ap_records(&ap_count, ap_list);
+            // ap_list is sorted strongest-RSSI first; find strongest AP in g_cfg.known_wifi[]
+            for (int i = 0; i < ap_count; i++) {
+                const char *ssid = (const char *)ap_list[i].ssid;
+                if (ssid[0] == '\0' || ap_list[i].authmode < WIFI_AUTH_WPA2_PSK) continue;
+                char pass_buf[64] = "";
+                if (app_config_find_wifi_pass(ssid, pass_buf, sizeof(pass_buf))) {
+                    strncpy(matched_ssid, ssid, sizeof(matched_ssid) - 1);
+                    strncpy(matched_pass, pass_buf, sizeof(matched_pass) - 1);
+                    matched_rssi = ap_list[i].rssi;
+                    break;
+                }
+            }
+        }
+        free(ap_list);
+    }
+
+    s_scanning = false;
+
+    if (matched_ssid[0] != '\0') {
+        bool switched = (strcmp(g_cfg.wifi_ssid, matched_ssid) != 0) || (strcmp(g_cfg.wifi_pass, matched_pass) != 0);
+        if (switched) {
+            ESP_LOGI(TAG, "Auto-roam: found remembered Wi-Fi '%s' (RSSI %d dBm) -> switching & joining",
+                     matched_ssid, matched_rssi);
+            memset(g_cfg.wifi_ssid, 0, sizeof(g_cfg.wifi_ssid));
+            memset(g_cfg.wifi_pass, 0, sizeof(g_cfg.wifi_pass));
+            strncpy(g_cfg.wifi_ssid, matched_ssid, sizeof(g_cfg.wifi_ssid) - 1);
+            strncpy(g_cfg.wifi_pass, matched_pass, sizeof(g_cfg.wifi_pass) - 1);
+            app_config_save();
+            ui_sync_wifi_fields();
+            net_time_reconnect();
+            vTaskDelete(NULL);
+            return;
+        }
+    }
+
+    if (!g_wifi_connected && !g_wifi_sleeping && g_cfg.wifi_ssid[0] != '\0') {
+        schedule_reconnect(2000);
     }
     vTaskDelete(NULL);
 }

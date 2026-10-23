@@ -24,10 +24,19 @@ typedef struct {
     const char *posix;
 } tz_entry_t;
 
+#define MAX_KNOWN_WIFI 8
+
 typedef struct {
-    char     wifi_ssid[64];
-    char     wifi_pass[64];
-    int      tz_index;
+    char ssid[64];
+    char pass[64];
+} wifi_cred_t;
+
+typedef struct {
+    char        wifi_ssid[64];
+    char        wifi_pass[64];
+    wifi_cred_t known_wifi[MAX_KNOWN_WIFI];
+    int         known_wifi_count;
+    int         tz_index;
     int      preset_index;
     bool     pure_black_oled;
     bool     sizing_static;   // true = Static 60px (default), false = Fit (84/72/60px)
@@ -57,6 +66,8 @@ extern const int TIMEOUT_VALUES_SEC[5];
 void app_config_load(void);
 void app_config_save(void);
 void app_config_apply_timezone(void);
+void app_config_remember_wifi(const char *ssid, const char *pass);
+bool app_config_find_wifi_pass(const char *ssid, char *out_pass, int max_len);
 
 #ifdef __cplusplus
 }

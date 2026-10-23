@@ -20,6 +20,7 @@ void ui_request_clock_redraw(void);
 bool ui_consume_clock_redraw_request(void);
 void ui_refresh_wifi_status_label(void);
 void ui_update_wifi_scan_results(const char *opts_newline_sep, int ap_count);
+void ui_sync_wifi_fields(void);
 
 #ifdef __cplusplus
 }
