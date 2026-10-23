@@ -105,7 +105,6 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base,
     if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_START) {
         esp_wifi_set_ps(WIFI_PS_NONE);
         esp_wifi_set_bandwidth(WIFI_IF_STA, WIFI_BW_HT20);
-        esp_wifi_set_protocol(WIFI_IF_STA, WIFI_PROTOCOL_11B | WIFI_PROTOCOL_11G | WIFI_PROTOCOL_11N);
         esp_wifi_set_max_tx_power(52); // 13 dBm clean linear TX (avoids near-field saturation at -38 dBm)
         if (g_cfg.wifi_ssid[0] != '\0' && !s_scanning) {
             ESP_LOGI(TAG, "Wi-Fi STA started, connecting to SSID '%s'...", g_cfg.wifi_ssid);
@@ -219,8 +218,8 @@ void net_time_init(void) {
     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
     ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_config));
     ESP_ERROR_CHECK(esp_wifi_disable_pmf_config(WIFI_IF_STA));
-    ESP_ERROR_CHECK(esp_wifi_start());
     s_wifi_started = true;
+    ESP_ERROR_CHECK(esp_wifi_start());
 }
 
 void net_time_wake(void) {

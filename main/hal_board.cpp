@@ -366,7 +366,11 @@ static uint32_t s_voice_pack_size  = 0;
 // A corrupt or truncated pack fails closed: s_voice_mmap_ptr stays NULL and the
 // play path refuses to run, instead of reading whatever follows the mapping.
 static bool voice_pack_validate(const uint8_t *bytes, uint32_t size) {
-    if (size < VOICE_HEADER_SIZE || memcmp(bytes, "WSMV", 4) != 0) {
+    if (size < VOICE_HEADER_SIZE) {
+        ESP_LOGW(TAG, "Voice partition too small (%u B)", (unsigned)size);
+        return false;
+    }
+    if (memcmp(bytes, "WSMV", 4) != 0) {
         ESP_LOGW(TAG, "Voice partition has no 'WSMV' header (%02X %02X %02X %02X)",
                  bytes[0], bytes[1], bytes[2], bytes[3]);
         return false;
@@ -421,6 +425,8 @@ void hal_audio_init(int initial_volume) {
             s_voice_mmap_ptr = bytes;
             ESP_LOGI(TAG, "Mounted Hebrew voice pack ('WSMV') in flash at %p", ptr);
         } else {
+            esp_partition_munmap(s_voice_mmap_handle);
+            s_voice_mmap_handle = 0;
             ESP_LOGW(TAG, "Voice pack rejected; spoken audio is disabled until it is reflashed");
         }
     }
@@ -512,7 +518,7 @@ void hal_audio_play_tokens(const heb_token_id_t *seq, int seq_len, int voice_id,
         if (tok < 0 || tok >= (int)num_tokens) continue;
         const voice_entry_t *ent = &index_base[vid * num_tokens + tok];
         // Re-checked per play: the pack is flash-mapped data, not trusted input.
-        if (ent->length > 0 && ent->offset >= VOICE_HEADER_SIZE &&
+        if (ent->length > 0 && ent->offset >= VOICE_HEADER_SIZE && (ent->offset & 1u) == 0 &&
             (uint64_t)ent->offset + ent->length <= s_voice_pack_size) {
             const int16_t *mono_samples = (const int16_t *)(s_voice_mmap_ptr + ent->offset);
             int total_samples = (int)(ent->length / sizeof(int16_t));

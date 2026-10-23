@@ -161,6 +161,7 @@ void app_config_load(void) {
         if (TIMEOUT_VALUES_SEC[i] == SEED_TIMEOUT_SEC) g_cfg.timeout_idx = i;
     }
     g_cfg.always_on_usb   = (SEED_ALWAYS_ON_USB != 0);
+    app_config_clamp();
 
     nvs_handle_t h;
     if (nvs_open("ws_millim", NVS_READWRITE, &h) == ESP_OK) {
