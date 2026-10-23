@@ -186,9 +186,9 @@ static void draw_filled_circle_aa(uint16_t *fb, float cx, float cy, float r, rgb
 }
 
 static bool sec_dot_intersects_hud(float sx, float sy, float r_dot) {
-    // 1. Wi-Fi icon bounding box (x: 191..225, y: 21..41)
-    if (sx + r_dot >= 190.0f && sx - r_dot <= 226.0f &&
-        sy + r_dot >= 20.0f  && sy - r_dot <= 42.0f) {
+    // 1. Wi-Fi icon bounding box (x: 191..230, y: 18..41)
+    if (sx + r_dot >= 190.0f && sx - r_dot <= 231.0f &&
+        sy + r_dot >= 17.0f  && sy - r_dot <= 42.0f) {
         return true;
     }
     // 2. Battery icon bounding box (x: 239..280, y: 22..42)
@@ -290,6 +290,14 @@ static inline float sd_segment(float px, float py, float ax, float ay, float bx,
     float dx = pax - bax * h;
     float dy = pay - bay * h;
     return sqrtf(dx * dx + dy * dy);
+}
+
+// Signed Distance Field (SDF) for a crisp 'Z' glyph centered at (cx, cy) with half-width hw and half-height hh
+static inline float sd_letter_z(float px, float py, float cx, float cy, float hw, float hh) {
+    float d_top  = sd_segment(px, py, cx - hw, cy - hh, cx + hw, cy - hh);
+    float d_diag = sd_segment(px, py, cx + hw, cy - hh, cx - hw, cy + hh);
+    float d_bot  = sd_segment(px, py, cx - hw, cy + hh, cx + hw, cy + hh);
+    return fminf(d_top, fminf(d_diag, d_bot));
 }
 
 // Smooth minimum (polynomial smin) for organic root fillets on the Settings gear teeth
@@ -399,14 +407,17 @@ static void draw_hud_icons(uint16_t *fb, rgb_t bg) {
     const float wx = 208.0f, wy = 38.5f;
     bool wifi_ok = g_wifi_connected || g_wifi_sleeping;
     int bars = 0;
-    if (wifi_ok) {
+    if (g_wifi_connected) {
         if (g_wifi_rssi >= -60) bars = 3;
         else if (g_wifi_rssi >= -72) bars = 2;
         else bars = 1;
+    } else if (g_wifi_sleeping) {
+        bars = 3;
     }
-    rgb_t wifi_active = g_wifi_sleeping ? rgb_t{ 130, 146, 172 } : rgb_t{ 185, 200, 225 };
+    rgb_t wifi_active = g_wifi_sleeping ? rgb_t{ 92, 108, 134 } : rgb_t{ 185, 200, 225 };
     rgb_t wifi_dim    = { 65,  76,  96  };
     rgb_t wifi_off    = { 239, 68,  68  };
+    rgb_t wifi_zzz    = { 125, 211, 252 }; // Sky-blue 'zzz' sleep badge
     rgb_t halo_col    = { 9,   13,  26  };
 
     // Base dot at (wx, wy)
@@ -432,8 +443,28 @@ static void draw_hud_icons(uint16_t *fb, rgb_t bg) {
         }
     }
 
-    // Smooth anti-aliased slash with contrast halo when disconnected (and not in post-sync sleep)
-    if (!wifi_ok) {
+    // Smooth anti-aliased ascending 'zzz' sleep badge when Wi-Fi radio is idling/sleeping between 6h NTP syncs
+    if (g_wifi_sleeping) {
+        for (int y = 17; y <= 40; y++) {
+            for (int x = 208; x <= 231; x++) {
+                float px = (float)x, py = (float)y;
+                float dz1 = sd_letter_z(px, py, 212.5f, 35.2f, 1.8f, 1.8f);
+                float dz2 = sd_letter_z(px, py, 218.0f, 29.2f, 2.4f, 2.4f);
+                float dz3 = sd_letter_z(px, py, 224.8f, 22.2f, 3.1f, 3.1f);
+                float d_zzz = fminf(dz1, fminf(dz2, dz3));
+
+                float cov_halo = clamp_f(2.15f - d_zzz, 0.0f, 1.0f);
+                if (cov_halo > 0.0f) {
+                    blend_pixel_fb(fb, x, y, bg, halo_col, (uint8_t)(cov_halo * 220.0f));
+                }
+                float cov_core = clamp_f(0.88f - d_zzz, 0.0f, 1.0f);
+                if (cov_core > 0.0f) {
+                    blend_pixel_fb(fb, x, y, bg, wifi_zzz, (uint8_t)(cov_core * 255.0f));
+                }
+            }
+        }
+    } else if (!wifi_ok) {
+        // Smooth anti-aliased slash with contrast halo when disconnected
         for (int y = (int)wy - 17; y <= (int)wy + 3; y++) {
             for (int x = (int)wx - 12; x <= (int)wx + 12; x++) {
                 float d_slash = sd_segment((float)x, (float)y, wx - 7.8f, wy - 14.2f, wx + 7.8f, wy + 0.4f);

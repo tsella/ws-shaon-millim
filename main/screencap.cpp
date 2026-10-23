@@ -2,6 +2,8 @@
 #include "hal_board.h"
 #include "ui_screens.h"
 #include "hebrew_clock.h"
+#include "net_time.h"
+#include "clock_renderer.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -111,6 +113,20 @@ static void screencap_task(void *arg) {
                 } else if (strcmp(line, "CHIME") == 0) {
                     hebrew_clock_play_chime_async();
                     printf("<<<OK CHIME>>>\n");
+                } else if (strcmp(line, "PREVIEW_WIFI_SLEEP") == 0) {
+                    g_wifi_sleeping = true;
+                    if (bsp_display_lock(500)) {
+                        clock_renderer_render_now();
+                        bsp_display_unlock();
+                    }
+                    printf("<<<OK PREVIEW_WIFI_SLEEP>>>\n");
+                } else if (strcmp(line, "PREVIEW_WIFI_NORM") == 0) {
+                    g_wifi_sleeping = false;
+                    if (bsp_display_lock(500)) {
+                        clock_renderer_render_now();
+                        bsp_display_unlock();
+                    }
+                    printf("<<<OK PREVIEW_WIFI_NORM>>>\n");
                 }
             }
         } else if (pos < (int)sizeof(line) - 1) {
